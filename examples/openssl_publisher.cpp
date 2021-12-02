@@ -89,7 +89,7 @@ int main(int argc, const char *argv[])
         key_path = NULL;
     }
 
-    MQTT::SSLPublisher publisher(addr, port, publish_callback, ca_file, nullptr, cert_path, key_path);
+    MQTT::SSLPublisher publisher(addr, port, publish_callback, ca_file, "", cert_path, key_path);
 
     /* start publishing the time */
     printf("%s is ready to begin publishing the time.\n", argv[0]);

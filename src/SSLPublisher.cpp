@@ -5,23 +5,24 @@
 #include <openssl/ssl.h>
 
 #include <thread>
+#include <utility>
 
-MQTT::SSLPublisher::SSLPublisher(const char* addr,
-                                 const char* port,
-                                 void (*publish_response_callback)(void**, struct mqtt_response_publish*),
-                                 const char* ca_file /*= nullptr*/,
-                                 const char* ca_path /*= nullptr*/,
-                                 const char* cert_path /*= nullptr*/,
-                                 const char* key_path /*= nullptr*/)
+MQTT::SSLPublisher::SSLPublisher(std::string addr,
+                                 std::string port,
+                                 void (*publish_response_callback)(void** state, struct mqtt_response_publish* publish),
+                                 std::string ca_file /*= ""*/,
+                                 std::string ca_path /*= ""*/,
+                                 std::string cert_path /*= ""*/,
+                                 std::string key_path /*= ""*/)
     : ssl_ctx(nullptr),
       sockfd(nullptr),
       client(nullptr),
-      addr(addr),
-      port(port),
-      ca_file(ca_file),
-      ca_path(ca_path),
-      cert_path(cert_path),
-      key_path(key_path),
+      addr(std::move(addr)),
+      port(std::move(port)),
+      ca_file(std::move(ca_file)),
+      ca_path(std::move(ca_path)),
+      cert_path(std::move(cert_path)),
+      key_path(std::move(key_path)),
       error("None"),
       publish_response_callback(publish_response_callback),
       client_daemon(-1)
@@ -33,7 +34,11 @@ MQTT::SSLPublisher::SSLPublisher(const char* addr,
     SSL_library_init();
 }
 
-MQTT::SSLPublisher::~SSLPublisher() { Cleanup(); }
+MQTT::SSLPublisher::~SSLPublisher()
+{
+    std::lock_guard<std::mutex> lk(client_mutex);
+    Cleanup();
+}
 
 bool MQTT::SSLPublisher::ConnectSocket()
 {
@@ -41,22 +46,22 @@ bool MQTT::SSLPublisher::ConnectSocket()
     SSL* ssl;
 
     /* load certificate */
-    if (!SSL_CTX_load_verify_locations(ssl_ctx, ca_file, ca_path))
+    if (!SSL_CTX_load_verify_locations(
+            ssl_ctx, ca_file.empty() ? NULL : ca_file.c_str(), ca_path.empty() ? NULL : ca_path.c_str()))
     {
-        Cleanup();
         error = "MQTT::SSLPublisher::ConnectSocket: failed to load ca certificate.";
         return false;
     }
 
-    if (cert_path && key_path)
+    if (!cert_path.empty() && !key_path.empty())
     {
-        if (!SSL_CTX_use_certificate_file(ssl_ctx, cert_path, SSL_FILETYPE_PEM))
+        if (!SSL_CTX_use_certificate_file(ssl_ctx, cert_path.c_str(), SSL_FILETYPE_PEM))
         {
             error = "MQTT::SSLPublisher::ConnectSocket: failed to load client certificate.";
             return false;
         }
 
-        if (!SSL_CTX_use_PrivateKey_file(ssl_ctx, key_path, SSL_FILETYPE_PEM))
+        if (!SSL_CTX_use_PrivateKey_file(ssl_ctx, key_path.c_str(), SSL_FILETYPE_PEM))
         {
             error = "MQTT::SSLPublisher::ConnectSocket: error: failed to load client key";
             return false;
@@ -67,15 +72,15 @@ bool MQTT::SSLPublisher::ConnectSocket()
     sockfd = BIO_new_ssl_connect(ssl_ctx);
     BIO_get_ssl(sockfd, &ssl);
     SSL_set_mode(ssl, SSL_MODE_AUTO_RETRY);
-    BIO_set_conn_hostname(sockfd, addr);
+    BIO_set_conn_hostname(sockfd, addr.c_str());
     BIO_set_nbio(sockfd, 1);
-    BIO_set_conn_port(sockfd, port);
+    BIO_set_conn_port(sockfd, port.c_str());
 
     /* wait for connect with 10 second timeout */
-    int start_time    = time(NULL);
-    int do_connect_rv = BIO_do_connect(sockfd);
+    time_t start_time    = time(nullptr);
+    int    do_connect_rv = BIO_do_connect(sockfd);
 
-    while (do_connect_rv <= 0 && BIO_should_retry(sockfd) && (int)time(NULL) - start_time < 10)
+    while (do_connect_rv <= 0 && BIO_should_retry(sockfd) && (int)time(nullptr) - start_time < 10)
     {
         do_connect_rv = BIO_do_connect(sockfd);
     }
@@ -85,8 +90,8 @@ bool MQTT::SSLPublisher::ConnectSocket()
         error = "MQTT::SSLPublisher::ConnectSocket: " + std::string(ERR_reason_error_string(ERR_get_error()));
         BIO_free_all(sockfd);
         SSL_CTX_free(ssl_ctx);
-        sockfd  = NULL;
-        ssl_ctx = NULL;
+        sockfd  = nullptr;
+        ssl_ctx = nullptr;
         return false;
     }
 
@@ -102,7 +107,6 @@ bool MQTT::SSLPublisher::ConnectSocket()
 
 void MQTT::SSLPublisher::Cleanup()
 {
-    std::lock_guard<std::mutex> lk(client_mutex);
     if (ssl_ctx)
     {
         SSL_CTX_free(ssl_ctx);
@@ -153,7 +157,7 @@ bool MQTT::SSLPublisher::InitClient()
         client = new mqtt_client();
 
         mqtt_init(client, sockfd, sendbuf, sizeof(sendbuf), recvbuf, sizeof(recvbuf), publish_response_callback);
-        mqtt_connect(client, "publishing_client", NULL, NULL, 0, NULL, NULL, 0, 400);
+        mqtt_connect(client, "publishing_client", nullptr, nullptr, 0, nullptr, nullptr, 0, 400);
 
         /* check that we don't have any errors */
         if (client->error != MQTT_OK)
@@ -164,7 +168,7 @@ bool MQTT::SSLPublisher::InitClient()
         }
 
         /* start a thread to refresh the client (handle egress and ingree client traffic) */
-        if (pthread_create(&client_daemon, NULL, client_refresher, this))
+        if (pthread_create(&client_daemon, nullptr, client_refresher, this))
         {
             error = "MQTT::SSLPublisher::InitClient: Failed to start client daemon.";
             Cleanup();
@@ -179,7 +183,11 @@ bool MQTT::SSLPublisher::Publish(const char* topic, const char* message)
     std::lock_guard<std::mutex> lk(client_mutex);
     if (!ssl_ctx && !sockfd)
     {
-        if (!(ConnectSocket() && InitClient())) return false;
+        if (!(ConnectSocket() && InitClient()))
+        {
+            Cleanup();
+            return false;
+        }
     }
 
     /* check for errors */
