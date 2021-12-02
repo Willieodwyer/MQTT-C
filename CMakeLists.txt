@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.5)
-project(MQTT-C VERSION 1.1.2 LANGUAGES C)
+project(MQTT-C VERSION 1.1.2)
 
 # MQTT-C build options
-option(MQTT_C_OpenSSL_SUPPORT "Build MQTT-C with OpenSSL support?" OFF)
+option(MQTT_C_OpenSSL_SUPPORT "Build MQTT-C with OpenSSL support?" ON)
 option(MQTT_C_MbedTLS_SUPPORT "Build MQTT-C with mbed TLS support?" OFF)
 option(MQTT_C_BearSSL_SUPPORT "Build MQTT-C with Bear SSL support?" OFF)
 option(MQTT_C_EXAMPLES "Build MQTT-C examples?" ON)
@@ -19,6 +19,13 @@ target_include_directories(mqttc PUBLIC include)
 target_link_libraries(mqttc PUBLIC 
     $<$<C_COMPILER_ID:MSVC>:ws2_32>
 )
+
+# MQTT-C library
+add_library(mqttcpp STATIC
+        src/SSLPublisher.cpp
+        )
+target_include_directories(mqttcpp PUBLIC include)
+target_link_libraries(mqttcpp PUBLIC mqttc)
 
 if(MQTT_C_BearSSL_SUPPORT)
     set(bearssl_root "$ENV{BEARSSL_ROOT}")
@@ -71,10 +78,13 @@ if(MQTT_C_EXAMPLES)
         else()
             add_executable(bio_publisher examples/bio_publisher.c)
             add_executable(openssl_publisher examples/openssl_publisher.c)
+            add_executable(openssl_publisher_cpp examples/openssl_publisher.cpp)
         endif()
 
         target_link_libraries(bio_publisher Threads::Threads mqttc)
         target_link_libraries(openssl_publisher Threads::Threads mqttc)
+        target_link_libraries(openssl_publisher_cpp Threads::Threads mqttcpp)
+
     elseif(MQTT_C_MbedTLS_SUPPORT)
         add_executable(mbedtls_publisher examples/mbedtls_publisher.c)
         target_link_libraries(mbedtls_publisher Threads::Threads mqttc ${MBEDX509_LIBRARY} ${MBEDCRYPTO_LIBRARY})
