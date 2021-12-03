@@ -21,21 +21,6 @@
 void publish_callback(void** unused, struct mqtt_response_publish *published);
 
 /**
- * @brief The client's refresher. This function triggers back-end routines to 
- *        handle ingress/egress traffic to the broker.
- * 
- * @note All this function needs to do is call \ref __mqtt_recv and 
- *       \ref __mqtt_send every so often. I've picked 100 ms meaning that 
- *       client ingress/egress traffic will be handled every 100 ms.
- */
-void* client_refresher(void* client);
-
-/**
- * @brief Safelty closes the \p sockfd and cancels the \p client_daemon before \c exit. 
- */
-void exit_example(int status, BIO* sockfd, pthread_t *client_daemon);
-
-/**
  * A simple program to that publishes the current time whenever ENTER is pressed. 
  */
 int main(int argc, const char *argv[]) 
@@ -118,17 +103,7 @@ int main(int argc, const char *argv[])
 
     /* disconnect */
     printf("\n%s disconnecting from %s\n", argv[0], addr);
-    sleep(1);
 }
-
-void exit_example(int status, BIO* sockfd, pthread_t *client_daemon)
-{
-    if (sockfd != NULL) BIO_free_all(sockfd);
-    if (client_daemon != NULL) pthread_cancel(*client_daemon);
-    exit(status);
-}
-
-
 
 void publish_callback(void** unused, struct mqtt_response_publish *published) 
 {
