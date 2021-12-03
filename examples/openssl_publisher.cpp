@@ -25,54 +25,12 @@ void publish_callback(void** unused, struct mqtt_response_publish *published);
  */
 int main(int argc, const char *argv[]) 
 {
-    const char* addr;
-    const char* port;
-    const char* topic;
-    const char* ca_file;
-    const char* cert_path;
-    const char* key_path;
-
-    if (argc > 1) {
-        ca_file = argv[1];
-    } else {
-        printf("error: path to the CA certificate to use\n");
-        exit(1);
-    }
-
-    /* get address (argv[2] if present) */
-    if (argc > 2) {
-        addr = argv[2];
-    } else {
-        addr = "test.mosquitto.org";
-    }
-
-    /* get port number (argv[3] if present) */
-    if (argc > 3) {
-        port = argv[3];
-    } else {
-        port = "8883";
-    }
-
-    /* get the topic name to publish */
-    if (argc > 4) {
-        topic = argv[4];
-    } else {
-        topic = "datetime";
-    }
-
-    /* get client cert */
-    if (argc > 5) {
-        cert_path = argv[5];
-    } else {
-        cert_path = NULL;
-    }
-
-    /* get client key */
-    if (argc > 6) {
-        key_path = argv[6];
-    } else {
-        key_path = NULL;
-    }
+    const char* addr= "127.0.0.1";
+    const char* port = "8883";
+    const char* topic= "/world";
+    const char* ca_file= "/home/will/mqtt-certs/ca.crt";
+    const char* cert_path= "/home/will/mqtt-certs/client.crt";
+    const char* key_path= "/home/will/mqtt-certs/client.key";
 
     MQTT::SSLPublisher publisher(addr, port, publish_callback, ca_file, "", cert_path, key_path);
 
